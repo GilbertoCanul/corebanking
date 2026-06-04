@@ -31,13 +31,11 @@ public class Transaction {
     @JoinColumn(name = "account_id", nullable = false)
     private Account account;
 
-    // Hook para poner la fecha automáticamente antes de guardar
     @PrePersist
     protected void onCreate() {
         timestamp = LocalDateTime.now();
     }
 
-    // Implementación estándar de equals y hashCode basada en ID
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -51,7 +49,6 @@ public class Transaction {
         return getClass().hashCode();
     }
 
-    // toString sobrescrito para evitar StackOverflow con la entidad Account
     @Override
     public String toString() {
         return "Transaction{id=" + id + ", type=" + type + ", amount=" + amount + "}";
