@@ -29,21 +29,33 @@ public class AccountService {
 
     @Transactional
     public AccountResponse createAccount(AccountRequest accountRequest) {
-        // 1. Validar que el usuario exista (NUEVA LÓGICA)
+        if (accountRequest.initialBalance().compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Initial balance cannot be negative");
+        }
+
+        if (accountRequest.accountNumber() == null || accountRequest.accountNumber().isBlank()) {
+            throw new IllegalArgumentException("Account number cannot be empty");
+        }
+
+        if (accountRequest.userId() == null) {
+            throw new IllegalArgumentException("User ID cannot be null");
+        }
+
+        // Validate that user exists
         User user = userRepository.findById(accountRequest.userId())
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + accountRequest.userId()));
         // Nota: Más adelante puedes cambiar RuntimeException por un UserNotFoundException personalizado
 
-        // 2. Mapeo: De DTO (Record) a Entidad
+        // Mapping: from DTO (Record) to Entity
         var account = new Account();
         account.setAccountNumber(accountRequest.accountNumber());
         account.setBalance(accountRequest.initialBalance());
-        account.setUser(user); // <-- ¡VINCULAMOS LA CUENTA AL USUARIO!
+        account.setUser(user);
 
-        // 3. Guardar en la base de datos
+        // Save in the database
         Account savedAccount = accountRepository.save(account);
 
-        // 4. Mapeo: De Entidad a DTO (Record)
+        // Mapping: from Entity to DTO (Record)
         return accountMapper.toResponse(savedAccount);
     }
 
@@ -58,23 +70,10 @@ public class AccountService {
 
     @Transactional
     public void deposit(Long accountId, BigDecimal amount) {
-        // 1. Domain Validation
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Deposit amount must be greater than zero.");
-        }
-
-        // 2. Fetch Entity (or throw exception if not found)
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found with ID: " + accountId));
 
-        // 3. Apply business logic
-        account.setBalance(account.getBalance().add(amount));
-
-        // 4. Save (JPA will handle the update because of @Transactional)
-        accountRepository.save(account);
-
-        // Registro de auditoría
-        createTransaction(account, amount, TransactionType.DEPOSIT);
+        account.deposit(amount);
     }
 
     @Transactional

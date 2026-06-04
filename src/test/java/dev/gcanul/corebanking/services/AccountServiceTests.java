@@ -4,7 +4,6 @@ import dev.gcanul.corebanking.dtos.AccountRequest;
 import dev.gcanul.corebanking.dtos.AccountResponse;
 import dev.gcanul.corebanking.entities.Account;
 import dev.gcanul.corebanking.entities.Transaction;
-import dev.gcanul.corebanking.entities.TransactionType;
 import dev.gcanul.corebanking.entities.User;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
@@ -21,19 +20,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class) // Habilita Mockito
+@ExtendWith(MockitoExtension.class) // Enables Mockito
 class AccountServiceTests {
 
     @Mock
-    private AccountRepository accountRepository; // El "doble" o simulacro del
+    private AccountRepository accountRepository;
 
     @Mock
     private AccountMapper accountMapper;
@@ -45,18 +44,15 @@ class AccountServiceTests {
     private TransactionRepository transactionRepository;
 
     @Captor
-    private ArgumentCaptor<Transaction> transactionCaptor; // ¡El cazador de objetos!
-
-    @Captor
     private ArgumentCaptor<Account> accountCaptor;
 
     @InjectMocks
-    private AccountService accountService; // La clase que estamos probando
+    private AccountService accountService;
 
     @Test
-    @DisplayName("Debe guardar una cuenta correctamente")
+    @DisplayName("Should save an account successfully")
     void shouldCreateAccountSuccessfully() {
-        // 1. Arrange (Preparar el escenario)
+        // 1. Arrange
         var accountNumber = "1234567890";
         var initialBalance = new BigDecimal("5000.00");
         var accountRequest = new AccountRequest(accountNumber, initialBalance, 1L);
@@ -71,14 +67,14 @@ class AccountServiceTests {
         // 2. Act
         AccountResponse accountResponse = accountService.createAccount(accountRequest);
 
-        // 3. Assert (Aquí ocurre la magia de AssertJ)
+        // 3. Assert
 
-        // Validar el Contrato (El DTO)
+        // Validate the contract (the DTO)
         assertThat(accountResponse)
-                .as("La respuesta del servicio debe coincidir con la esperada") // Mensaje personalizado si falla
+                .as("The service response should match expected one")
                 .isEqualTo(expectedResponse);
 
-        // Validar la Interacción (El Repositorio)
+        // Validate the interaction (the repository)
         verify(accountRepository).save(accountCaptor.capture());
         Account capturedAccount = accountCaptor.getValue();
 
@@ -88,59 +84,98 @@ class AccountServiceTests {
     }
 
     @Test
-    @DisplayName("Debe lanzar una excepción cuando el usuario no existe")
+    @DisplayName("Should throw an exception when user does not exist")
     void shouldThrowExceptionWhenUserDoesNotExist() {
         // 1. Arrange
-        // Mandamos un userId que sabemos que no existe (ej. 99L)
-        var invalidRequest = new AccountRequest("0987654321", new BigDecimal("1000.00"), 99L);
+        var request = new AccountRequest("0987654321", new BigDecimal("1000.00"), 99L);
 
-        // Le enseñamos al mock del UserRepository: "Si te piden el ID 99, devuelve un Optional vacío"
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         // 2. Act & Assert
-        // Validamos que ejecutar el método lance la excepción correcta
-        assertThrows(RuntimeException.class, () -> { // Cambia RuntimeException por tu excepción personalizada si tienes una
-            accountService.createAccount(invalidRequest);
-        });
+        assertThatThrownBy(() -> accountService.createAccount(request))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("User not found with ID: 99");
 
-        // 3. Verify
-        // ¡LA PARTE MÁS IMPORTANTE!
-        // Verificamos que, debido al error, el repositorio de cuentas NUNCA llamó al método save()
+        // 3. Verify side effects
         verify(accountRepository, never()).save(any(Account.class));
     }
 
     @Test
-    @DisplayName("Debe depositar dinero exitosamente y guardar la transacción")
-    void shouldDepositSuccessfully() {
+    @DisplayName("Should throw exception when initial balance is negative")
+    void shouldThrowExceptionWhenInitialBalanceIsNegative() {
+        var request = new AccountRequest("1234567890", new BigDecimal("-100.00"), 99L);
+
+        assertThatThrownBy(() -> accountService.createAccount(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Initial balance cannot be negative");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when account number is null or empty")
+    void shouldThrowExceptionWhenAccountNumberIsInvalid() {
+        // Escenario: cuenta nula
+        var requestWithNullAccountNumber = new AccountRequest(null, new BigDecimal("100.00"), 1L);
+
+        // Escenario: cuenta vacía
+        var requestWithEmptyAccountNumber = new AccountRequest("", new BigDecimal("100.00"), 1L);
+
+        assertThatThrownBy(() -> accountService.createAccount(requestWithNullAccountNumber))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThatThrownBy(() -> accountService.createAccount(requestWithEmptyAccountNumber))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("Should throw exception when user ID is null")
+    void shouldThrowExceptionWhenUserIdIsNull() {
+        var request = new AccountRequest("1234567890", new BigDecimal("100.00"), null);
+
+        assertThatThrownBy(() -> accountService.createAccount(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("User ID cannot be null");
+    }
+
+    @Test
+    @DisplayName("Should successfully deposit money into account")
+    void shouldSuccessfullyDepositMoney() {
         // 1. Arrange
         Long accountId = 1L;
-        BigDecimal depositAmount = new BigDecimal("500.00");
+        BigDecimal initialBalance = new BigDecimal("100.00");
+        BigDecimal depositAmount = new BigDecimal("50.00");
 
-        var mockAccount = Account.builder()
+        Account account = Account.builder()
                 .id(accountId)
-                .balance(new BigDecimal("1000.00")) // Saldo inicial: $1000
+                .balance(initialBalance)
                 .build();
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(mockAccount));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
         // 2. Act
         accountService.deposit(accountId, depositAmount);
 
         // 3. Assert
-        // Verificamos que el saldo en el objeto Account cambió a $1500
-        assertEquals(new BigDecimal("1500.00"), mockAccount.getBalance());
+        assertThat(account.getBalance()).isEqualByComparingTo("150.00");
+        assertThat(account.getTransactions()).hasSize(1);
+        assertThat(account.getTransactions().getFirst().getAmount()).isEqualByComparingTo(depositAmount);
+    }
 
-        // Verificamos que se llamó al guardado de la cuenta
-        verify(accountRepository, times(1)).save(mockAccount);
+    @Test
+    @DisplayName("Should throw AccountNotFoundException when account does not exist")
+    void shouldThrowExceptionWhenAccountNotFound() {
+        // 1. Arrange
+        Long nonExistentId = 999L;
+        BigDecimal amount = new BigDecimal("50.00");
 
-        // ¡LA MAGIA DEL CAPTOR! Atrapamos la transacción que se intentó guardar
-        verify(transactionRepository, times(1)).save(transactionCaptor.capture());
-        Transaction savedTransaction = transactionCaptor.getValue();
+        when(accountRepository.findById(nonExistentId)).thenReturn(Optional.empty());
 
-        // Validamos el contenido de la transacción atrapada
-        assertEquals(TransactionType.DEPOSIT, savedTransaction.getType());
-        assertEquals(depositAmount, savedTransaction.getAmount());
-        assertEquals(mockAccount, savedTransaction.getAccount());
+        // 2. Act & Assert
+        assertThatThrownBy(() -> accountService.deposit(nonExistentId, amount))
+                .isInstanceOf(AccountNotFoundException.class)
+                .hasMessage("Account not found with ID: 999");
+
+        // 3. Verify
+        verify(accountRepository, never()).save(any(Account.class));
     }
 
     @Test
@@ -158,9 +193,8 @@ class AccountServiceTests {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(mockAccount));
 
         // 2. Act & Assert
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-            accountService.withdraw(accountId, withdrawalAmount);
-        });
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> accountService.withdraw(accountId, withdrawalAmount));
 
         assertEquals("Insufficient funds for withdrawal.", exception.getMessage());
 
