@@ -29,7 +29,7 @@ public class AccountService {
 
     @Transactional
     public AccountResponse createAccount(AccountRequest accountRequest) {
-        // 1. Validar que el usuario exista (NUEVA LÓGICA)
+        // 1. Validar que el usuario exista
         User user = userRepository.findById(accountRequest.userId())
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + accountRequest.userId()));
         // Nota: Más adelante puedes cambiar RuntimeException por un UserNotFoundException personalizado
