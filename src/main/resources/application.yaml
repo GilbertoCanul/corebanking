@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: corebanking
+    security:
+      jwt:
+        secret-key: "4F7Wj/53vg99hbBs09sBhAUtMt+zAHM9/cYADTaxEBQ="
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/corebanking_db
+    username: postgres
+    password: rootpassword
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
