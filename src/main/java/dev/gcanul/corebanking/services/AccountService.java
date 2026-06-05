@@ -3,13 +3,10 @@ package dev.gcanul.corebanking.services;
 import dev.gcanul.corebanking.dtos.AccountRequest;
 import dev.gcanul.corebanking.dtos.AccountResponse;
 import dev.gcanul.corebanking.entities.Account;
-import dev.gcanul.corebanking.entities.Transaction;
-import dev.gcanul.corebanking.entities.TransactionType;
 import dev.gcanul.corebanking.entities.User;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
 import dev.gcanul.corebanking.repositories.AccountRepository;
-import dev.gcanul.corebanking.repositories.TransactionRepository;
 import dev.gcanul.corebanking.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,7 +20,6 @@ import java.util.List;
 public class AccountService {
 
     private final AccountRepository accountRepository;
-    private final TransactionRepository transactionRepository;
     private final AccountMapper accountMapper;
     private final UserRepository userRepository;
 
@@ -78,36 +74,9 @@ public class AccountService {
 
     @Transactional
     public void withdraw(Long accountId, BigDecimal amount) {
-        // 1. Domain Validation
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Withdrawal amount must be greater than zero.");
-        }
-
-        // 2. Fetch Entity
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found with ID: " + accountId));
 
-        // 3. Business Rule: Check for sufficient funds
-        if (account.getBalance().compareTo(amount) < 0) {
-            throw new IllegalStateException("Insufficient funds for withdrawal.");
-        }
-
-        // 4. Apply logic
-        account.setBalance(account.getBalance().subtract(amount));
-        accountRepository.save(account);
-
-        // Registro de auditoría
-        createTransaction(account, amount, TransactionType.WITHDRAWAL);
-    }
-
-    // Método privado para mantener el código DRY y centralizar la lógica de auditoría
-    private void createTransaction(Account account, BigDecimal amount, TransactionType type) {
-        Transaction transaction = Transaction.builder()
-                .amount(amount)
-                .type(type)
-                .account(account) // ¡Aquí vinculamos la transacción con la cuenta!
-                .build();
-
-        transactionRepository.save(transaction);
+        account.withdraw(amount);
     }
 }

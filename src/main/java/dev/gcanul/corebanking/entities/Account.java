@@ -1,5 +1,6 @@
 package dev.gcanul.corebanking.entities;
 
+import dev.gcanul.corebanking.exceptions.InsufficientFundsException;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;
@@ -16,9 +17,7 @@ import java.util.List;
 @Builder
 @Entity
 @Table(name = "accounts")
-// 1. Sobrescribimos el DELETE para que sea un UPDATE
 @SQLDelete(sql = "UPDATE accounts SET deleted = true WHERE id = ?")
-// 2. Filtramos automáticamente para que las consultas ignoren los eliminados
 @Where(clause = "deleted = false")
 public class Account {
 
@@ -48,15 +47,31 @@ public class Account {
 
         this.balance = this.balance.add(amount);
 
-        // B) Registramos la evidencia de forma atómica
-        // Usamos el builder recordando que el timestamp se maneja con @PrePersist
         Transaction depositTransaction = Transaction.builder()
                 .amount(amount)
                 .type(TransactionType.DEPOSIT)
                 .build();
 
-        // Al agregarla a la lista, CascadeType.ALL se encargará de guardarla en la DB
         this.transactions.add(depositTransaction);
+    }
+
+    public void withdraw(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("The withdrawal amount must be greater than zero");
+        }
+
+        if (this.balance.compareTo(amount) < 0) {
+            throw new InsufficientFundsException("Insufficient funds for withdrawal");
+        }
+
+        this.balance = this.balance.subtract(amount);
+
+        Transaction withdrawalTransaction = Transaction.builder()
+                .amount(amount)
+                .type(TransactionType.WITHDRAWAL)
+                .build();
+
+        this.transactions.add(withdrawalTransaction);
     }
 
     @Override

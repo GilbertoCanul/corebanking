@@ -3,12 +3,11 @@ package dev.gcanul.corebanking.services;
 import dev.gcanul.corebanking.dtos.AccountRequest;
 import dev.gcanul.corebanking.dtos.AccountResponse;
 import dev.gcanul.corebanking.entities.Account;
-import dev.gcanul.corebanking.entities.Transaction;
 import dev.gcanul.corebanking.entities.User;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
+import dev.gcanul.corebanking.exceptions.InsufficientFundsException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
 import dev.gcanul.corebanking.repositories.AccountRepository;
-import dev.gcanul.corebanking.repositories.TransactionRepository;
 import dev.gcanul.corebanking.repositories.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +23,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -39,9 +37,6 @@ class AccountServiceTests {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private TransactionRepository transactionRepository;
 
     @Captor
     private ArgumentCaptor<Account> accountCaptor;
@@ -85,7 +80,7 @@ class AccountServiceTests {
 
     @Test
     @DisplayName("Should throw an exception when user does not exist")
-    void shouldThrowExceptionWhenUserDoesNotExist() {
+    void shouldThrowException_WhenUserDoesNotExist() {
         // 1. Arrange
         var request = new AccountRequest("0987654321", new BigDecimal("1000.00"), 99L);
 
@@ -102,7 +97,7 @@ class AccountServiceTests {
 
     @Test
     @DisplayName("Should throw exception when initial balance is negative")
-    void shouldThrowExceptionWhenInitialBalanceIsNegative() {
+    void shouldThrowException_WhenInitialBalanceIsNegative() {
         var request = new AccountRequest("1234567890", new BigDecimal("-100.00"), 99L);
 
         assertThatThrownBy(() -> accountService.createAccount(request))
@@ -112,13 +107,12 @@ class AccountServiceTests {
 
     @Test
     @DisplayName("Should throw exception when account number is null or empty")
-    void shouldThrowExceptionWhenAccountNumberIsInvalid() {
-        // Escenario: cuenta nula
+    void shouldThrowException_WhenAccountNumberIsInvalid() {
+        // 1. Arrange
         var requestWithNullAccountNumber = new AccountRequest(null, new BigDecimal("100.00"), 1L);
-
-        // Escenario: cuenta vacía
         var requestWithEmptyAccountNumber = new AccountRequest("", new BigDecimal("100.00"), 1L);
 
+        // 2. Act & 3. Assert
         assertThatThrownBy(() -> accountService.createAccount(requestWithNullAccountNumber))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -128,9 +122,11 @@ class AccountServiceTests {
 
     @Test
     @DisplayName("Should throw exception when user ID is null")
-    void shouldThrowExceptionWhenUserIdIsNull() {
+    void shouldThrowException_WhenUserIdIsNull() {
+        // 1. Arrange
         var request = new AccountRequest("1234567890", new BigDecimal("100.00"), null);
 
+        // 2. Act & 3. Assert
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("User ID cannot be null");
@@ -161,45 +157,88 @@ class AccountServiceTests {
     }
 
     @Test
-    @DisplayName("Should throw AccountNotFoundException when account does not exist")
-    void shouldThrowExceptionWhenAccountNotFound() {
+    @DisplayName("Should throw AccountNotFoundException when depositing to non-existent account")
+    void shouldThrowAccountNotFoundException_WhenDepositingToNonExistentAccount() {
         // 1. Arrange
         Long nonExistentId = 999L;
         BigDecimal amount = new BigDecimal("50.00");
 
         when(accountRepository.findById(nonExistentId)).thenReturn(Optional.empty());
 
-        // 2. Act & Assert
+        // 2. Act & 3. Assert
         assertThatThrownBy(() -> accountService.deposit(nonExistentId, amount))
                 .isInstanceOf(AccountNotFoundException.class)
                 .hasMessage("Account not found with ID: 999");
 
-        // 3. Verify
+        // Verify
         verify(accountRepository, never()).save(any(Account.class));
     }
 
     @Test
-    @DisplayName("Debe lanzar excepción si no hay fondos suficientes para el retiro")
-    void shouldThrowExceptionWhenWithdrawalHasInsufficientFunds() {
+    @DisplayName("Should successfully withdraw money from account")
+    void shouldSuccessfullyWithdrawMoney() {
         // 1. Arrange
         Long accountId = 1L;
-        BigDecimal withdrawalAmount = new BigDecimal("2000.00"); // Quiere sacar $2000
+        BigDecimal initialBalance = new BigDecimal("100.00");
+        BigDecimal withdrawalAmount = new BigDecimal("50.00");
 
-        var mockAccount = Account.builder()
+        Account account = Account.builder()
                 .id(accountId)
-                .balance(new BigDecimal("1000.00")) // Pero solo tiene $1000
+                .balance(initialBalance)
                 .build();
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(mockAccount));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        // 2. Act & Assert
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> accountService.withdraw(accountId, withdrawalAmount));
+        // 2. Act
+        accountService.withdraw(accountId, withdrawalAmount);
 
-        assertEquals("Insufficient funds for withdrawal.", exception.getMessage());
+        // 3. Assert
+        assertThat(account.getBalance()).isEqualByComparingTo("50.00");
+        assertThat(account.getTransactions()).hasSize(1);
+        assertThat(account.getTransactions().getFirst().getAmount()).isEqualByComparingTo(withdrawalAmount);
+    }
 
-        // 3. Verify: Nos aseguramos de que NADIE guardó NADA
+    @Test
+    @DisplayName("Should throw AccountNotFoundException when withdrawing from non-existent account")
+    void shouldThrowAccountNotFoundException_WhenWithdrawingFromNonExistentAccount() {
+        // 1. Arrange
+        Long nonExistentId = 999L;
+        BigDecimal amount = new BigDecimal("50.00");
+
+        when(accountRepository.findById(nonExistentId)).thenReturn(Optional.empty());
+
+        // 2. Act & 3. Assert
+        assertThatThrownBy(() -> accountService.withdraw(nonExistentId, amount))
+                .isInstanceOf(AccountNotFoundException.class)
+                .hasMessage("Account not found with ID: 999");
+
+        // Verify
         verify(accountRepository, never()).save(any(Account.class));
-        verify(transactionRepository, never()).save(any(Transaction.class));
+    }
+
+    @Test
+    @DisplayName("Should throw InsufficientFundsException when balance is lower than withdrawal amount")
+    void shouldThrowInsufficientFundsException_WhenBalanceIsLowerThanAmount() {
+        // 1. Arrange
+        Long accountId = 1L;
+        BigDecimal initialBalance = new BigDecimal("50.00");
+        BigDecimal withdrawalAmount = new BigDecimal("100.00");
+
+        Account account = Account.builder()
+                .id(accountId)
+                .balance(initialBalance)
+                .build();
+
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+
+        // 2. Act & 3. Assert
+        assertThatThrownBy(() -> accountService.withdraw(accountId, withdrawalAmount))
+                .isInstanceOf(InsufficientFundsException.class)
+                .hasMessage("Insufficient funds for withdrawal");
+        assertThat(account.getBalance()).isEqualByComparingTo(initialBalance);
+        assertThat(account.getTransactions()).isEmpty();
+
+        // Verify
+        verify(accountRepository, times(1)).findById(accountId);
     }
 }
