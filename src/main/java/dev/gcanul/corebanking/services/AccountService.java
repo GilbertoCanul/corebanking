@@ -79,4 +79,30 @@ public class AccountService {
 
         account.withdraw(amount);
     }
+
+    @Transactional
+    public void transfer(Long fromAccountId, Long toAccountId, BigDecimal amount) {
+        if (fromAccountId.equals(toAccountId)) {
+            throw new IllegalArgumentException("Cannot transfer to the same account");
+        }
+
+        // 2. Ordenar IDs para prevenir Deadlocks
+        Long firstId = Math.min(fromAccountId, toAccountId);
+        Long secondId = Math.max(fromAccountId, toAccountId);
+
+        // 3. Obtener cuentas en orden (esto evita el deadlock)
+        // Nota: Aunque el fetch es "en orden", esto es para la lógica de bloqueo.
+        // Los objetos luego los asignamos según corresponda.
+        Account firstAccount = accountRepository.findById(firstId)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + firstId));
+        Account secondAccount = accountRepository.findById(secondId)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + secondId));
+
+        Account sender = (firstId.equals(fromAccountId)) ? firstAccount : secondAccount;
+        Account receiver = (firstId.equals(toAccountId)) ? firstAccount : secondAccount;
+
+        // 4. Ejecutar lógica de negocio (reutilizamos tus métodos de Account)
+        sender.withdraw(amount);
+        receiver.deposit(amount);
+    }
 }

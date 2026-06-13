@@ -241,4 +241,52 @@ class AccountServiceTests {
         // Verify
         verify(accountRepository, times(1)).findById(accountId);
     }
+
+    @Test
+    @DisplayName("Should transfer money successfully between two different accounts")
+    void shouldTransferSuccessfully_WhenFundsAreSufficient() {
+        // 1. Arrange
+        Long fromId = 1L;
+        Long toId = 2L;
+        BigDecimal amount = BigDecimal.valueOf(100);
+        Account sender = Account.builder().id(fromId).balance(BigDecimal.valueOf(500)).build();
+        Account receiver = Account.builder().id(toId).balance(BigDecimal.valueOf(100)).build();
+
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(sender));
+        when(accountRepository.findById(2L)).thenReturn(Optional.of(receiver));
+
+        // 2. Act
+        accountService.transfer(fromId, toId, amount);
+
+        // 3. Assert
+        assertThat(sender.getBalance()).isEqualByComparingTo("400");
+        assertThat(receiver.getBalance()).isEqualByComparingTo("200");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when funds are insufficient")
+    void shouldThrowException_WhenInsufficientFunds() {
+        // Arrange
+        Long fromId = 1L;
+        Long toId = 2L;
+        Account sender = Account.builder().id(fromId).balance(BigDecimal.valueOf(50)).build();
+        Account receiver = Account.builder().id(toId).balance(BigDecimal.valueOf(100)).build();
+
+        when(accountRepository.findById(fromId)).thenReturn(Optional.of(sender));
+        when(accountRepository.findById(toId)).thenReturn(Optional.of(receiver));
+
+        // Act & Assert
+        assertThatThrownBy(() -> accountService.transfer(fromId, toId, BigDecimal.valueOf(100)))
+                .isInstanceOf(InsufficientFundsException.class)
+                .hasMessage("Insufficient funds for withdrawal");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when trying to transfer to same account")
+    void shouldThrowException_WhenTransferingToSameAccount() {
+        // Act & Assert
+        assertThatThrownBy(() -> accountService.transfer(1L, 1L, BigDecimal.valueOf(100)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Cannot transfer to the same account");
+    }
 }
