@@ -27,10 +27,6 @@ public class Transaction {
 
     private LocalDateTime timestamp;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "account_id", nullable = false)
-    private Account account;
-
     @PrePersist
     protected void onCreate() {
         timestamp = LocalDateTime.now();
