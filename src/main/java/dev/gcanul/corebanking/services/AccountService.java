@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -32,10 +34,6 @@ public class AccountService {
             throw new IllegalArgumentException("Initial balance cannot be negative");
         }
 
-        if (accountRequest.accountNumber() == null || accountRequest.accountNumber().isBlank()) {
-            throw new IllegalArgumentException("Account number cannot be empty");
-        }
-
         if (accountRequest.userId() == null) {
             throw new IllegalArgumentException("User ID cannot be null");
         }
@@ -45,11 +43,13 @@ public class AccountService {
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + accountRequest.userId()));
         // Nota: Más adelante puedes cambiar RuntimeException por un UserNotFoundException personalizado
 
-        // Mapping: from DTO (Record) to Entity
-        var account = new Account();
-        account.setAccountNumber(accountRequest.accountNumber());
-        account.setBalance(accountRequest.initialBalance());
-        account.setUser(user);
+        String generatedAccountNumber;
+
+        do {
+            generatedAccountNumber = generateAccountNumber();
+        } while (accountRepository.existsByAccountNumber(generatedAccountNumber));
+
+        Account account = accountMapper.toEntity(accountRequest, generatedAccountNumber, user);
 
         // Save in the database
         Account savedAccount = accountRepository.save(account);
@@ -63,8 +63,16 @@ public class AccountService {
 
         eventProducer.sendAccountCreatedEvent(event);
 
-        // Mapping: from Entity to DTO (Record)
         return accountMapper.toResponse(savedAccount);
+    }
+
+    private String generateAccountNumber() {
+        int year = LocalDate.now().getYear();
+        // Genera un número aleatorio entre 0000 y 9999
+        int randomPart = new SecureRandom().nextInt(10000);
+
+        // String.format asegura el relleno con ceros (ej: 5 -> 0005)
+        return String.format("ACC-%d-%04d", year, randomPart);
     }
 
     @Transactional(readOnly = true)
