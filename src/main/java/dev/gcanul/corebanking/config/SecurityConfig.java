@@ -27,7 +27,12 @@ public class SecurityConfig {
 
                 // 2. Definimos las reglas de acceso a las URLs
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**").permitAll() // Login/registro libre
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
                         .anyRequest().authenticated()           // Todo lo demás requiere token
                 )
 

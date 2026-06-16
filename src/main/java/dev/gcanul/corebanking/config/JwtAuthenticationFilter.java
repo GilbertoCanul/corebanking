@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.io.IOException;
 
@@ -23,6 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final HandlerExceptionResolver handlerExceptionResolver;
 
     @Override
     protected void doFilterInternal(
@@ -34,7 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 1. Extraer el header Authorization
         final String authHeader = request.getHeader("Authorization");
         final String jwt;
-        String userEmail = null;
+        String userEmail;
 
         // 2. Si no hay header o no empieza con "Bearer ", saltamos al siguiente filtro
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -45,36 +47,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 3. Extraer el token
         jwt = authHeader.substring(7);
 
-        // --- EL BLOQUE SENIOR: Blindaje contra tokens expirados, mal formados o nulos ---
         try {
             userEmail = jwtService.extractUsername(jwt);
-        } catch (Exception e) {
-            // Si el token falló (ej. ExpiredJwtException o SignatureException),
-            // simplemente pasamos la petición al siguiente filtro sin setear la autenticación.
-            // Esto forzará a Spring Security a lanzar un 401 usando tu EntryPoint.
-            filterChain.doFilter(request, response);
-            return;
-        }
 
-        // 4. Validar si el usuario existe y no está ya autenticado
-        if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
+            if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-                // 5. Crear el token de autenticación de Spring Security
-                var authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                // 6. ¡IMPORTANTE! Guardar la autenticación en el contexto
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+                if (jwtService.isTokenValid(jwt, userDetails)) {
+                    var authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities()
+                    );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
             }
-        }
 
-        // 7. Continuar con la cadena de filtros
-        filterChain.doFilter(request, response);
+            filterChain.doFilter(request, response);
+
+        } catch (Exception e) {
+            // EL CAMBIO MAGISTRAL:
+            // En lugar de continuar el filtro silenciosamente, derivamos la excepción a nuestro manejador global.
+            handlerExceptionResolver.resolveException(request, response, null, e);
+        }
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        // Agregamos más flexibilidad por si acaso
+        return path.contains("/swagger-ui") ||
+                path.contains("/v3/api-docs") ||
+                path.startsWith("/api/v1/auth");
     }
 }
