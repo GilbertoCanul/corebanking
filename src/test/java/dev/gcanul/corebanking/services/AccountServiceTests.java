@@ -4,9 +4,11 @@ import dev.gcanul.corebanking.dtos.AccountRequest;
 import dev.gcanul.corebanking.dtos.AccountResponse;
 import dev.gcanul.corebanking.entities.Account;
 import dev.gcanul.corebanking.entities.User;
+import dev.gcanul.corebanking.events.AccountCreatedEvent;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
 import dev.gcanul.corebanking.exceptions.InsufficientFundsException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
+import dev.gcanul.corebanking.producers.AccountEventProducer;
 import dev.gcanul.corebanking.repositories.AccountRepository;
 import dev.gcanul.corebanking.repositories.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +40,9 @@ class AccountServiceTests {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private AccountEventProducer eventProducer;
+
     @Captor
     private ArgumentCaptor<Account> accountCaptor;
 
@@ -48,41 +53,86 @@ class AccountServiceTests {
     @DisplayName("Should save an account successfully")
     void shouldCreateAccountSuccessfully() {
         // 1. Arrange
-        var accountNumber = "1234567890";
         var initialBalance = new BigDecimal("5000.00");
-        var accountRequest = new AccountRequest(accountNumber, initialBalance, 1L);
+        var accountRequest = new AccountRequest(initialBalance, 1L);
         var fakeUser = new User();
 
-        var expectedResponse = new AccountResponse(1L, accountNumber, initialBalance, 1L);
+        // Configuramos los mappers
+        var accountToSave = Account.builder()
+                .accountNumber("ACC-2026-0001")
+                .balance(initialBalance)
+                .user(fakeUser)
+                .build();
+        when(accountMapper.toEntity(any(AccountRequest.class), anyString(), eq(fakeUser)))
+                .thenReturn(accountToSave);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(fakeUser));
-        when(accountRepository.save(any(Account.class))).thenReturn(new Account());
+        var expectedResponse = new AccountResponse(1L, "ACC-2026-0001", initialBalance, 1L);
         when(accountMapper.toResponse(any(Account.class))).thenReturn(expectedResponse);
+
+        // Configuramos el "stub" para el repository
+        when(userRepository.findById(1L)).thenReturn(Optional.of(fakeUser));
+        when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
+        when(accountRepository.save(any(Account.class))).thenReturn(accountToSave);
 
         // 2. Act
         AccountResponse accountResponse = accountService.createAccount(accountRequest);
 
         // 3. Assert
+        assertThat(accountResponse).isEqualTo(expectedResponse);
 
-        // Validate the contract (the DTO)
-        assertThat(accountResponse)
-                .as("The service response should match expected one")
-                .isEqualTo(expectedResponse);
-
-        // Validate the interaction (the repository)
+        // Verificamos la interacción con el repository
         verify(accountRepository).save(accountCaptor.capture());
         Account capturedAccount = accountCaptor.getValue();
 
-        assertThat(capturedAccount.getAccountNumber()).isEqualTo(accountNumber);
+        // Verify interaction with mapper
+        verify(accountMapper).toResponse(accountToSave);
+
+        assertThat(capturedAccount.getAccountNumber()).isEqualTo("ACC-2026-0001"); // Verificamos formato
         assertThat(capturedAccount.getBalance()).isEqualByComparingTo(initialBalance);
         assertThat(capturedAccount.getUser()).isEqualTo(fakeUser);
+
+        verify(eventProducer).sendAccountCreatedEvent(any(AccountCreatedEvent.class));
+    }
+
+    @Test
+    @DisplayName("Should retry when account number already exists")
+    void shouldRetryWhenAccountNumberAlreadyExists() {
+        // 1. Arrange
+        var initialBalance = new BigDecimal("5000.00");
+        var accountRequest = new AccountRequest(initialBalance, 1L);
+        var fakeUser = new User();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(fakeUser));
+        when(accountRepository.existsByAccountNumber(anyString()))
+                .thenReturn(true)
+                .thenReturn(false);
+
+        var accountToSave = Account.builder()
+                .accountNumber("ACC-2026-0001")
+                .balance(initialBalance)
+                .user(fakeUser)
+                .build();
+
+        when(accountMapper.toEntity(any(), anyString(), any())).thenReturn(accountToSave);
+        when(accountRepository.save(any(Account.class))).thenReturn(accountToSave);
+        when(accountMapper.toResponse(any())).thenReturn(new AccountResponse(1L, "ACC-2026-0001", initialBalance, 1L));
+
+        // 2. Act
+        accountService.createAccount(accountRequest);
+
+        // 3. Assert / Verify
+        // Verificamos que el repositorio verificó la existencia DOS veces
+        verify(accountRepository, times(2)).existsByAccountNumber(anyString());
+
+        // Verificamos que al final sí guardó la cuenta
+        verify(accountRepository).save(any(Account.class));
     }
 
     @Test
     @DisplayName("Should throw an exception when user does not exist")
     void shouldThrowException_WhenUserDoesNotExist() {
         // 1. Arrange
-        var request = new AccountRequest("0987654321", new BigDecimal("1000.00"), 99L);
+        var request = new AccountRequest(new BigDecimal("1000.00"), 99L);
 
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
@@ -98,7 +148,7 @@ class AccountServiceTests {
     @Test
     @DisplayName("Should throw exception when initial balance is negative")
     void shouldThrowException_WhenInitialBalanceIsNegative() {
-        var request = new AccountRequest("1234567890", new BigDecimal("-100.00"), 99L);
+        var request = new AccountRequest(new BigDecimal("-100.00"), 99L);
 
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -106,25 +156,10 @@ class AccountServiceTests {
     }
 
     @Test
-    @DisplayName("Should throw exception when account number is null or empty")
-    void shouldThrowException_WhenAccountNumberIsInvalid() {
-        // 1. Arrange
-        var requestWithNullAccountNumber = new AccountRequest(null, new BigDecimal("100.00"), 1L);
-        var requestWithEmptyAccountNumber = new AccountRequest("", new BigDecimal("100.00"), 1L);
-
-        // 2. Act & 3. Assert
-        assertThatThrownBy(() -> accountService.createAccount(requestWithNullAccountNumber))
-                .isInstanceOf(IllegalArgumentException.class);
-
-        assertThatThrownBy(() -> accountService.createAccount(requestWithEmptyAccountNumber))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
     @DisplayName("Should throw exception when user ID is null")
     void shouldThrowException_WhenUserIdIsNull() {
         // 1. Arrange
-        var request = new AccountRequest("1234567890", new BigDecimal("100.00"), null);
+        var request = new AccountRequest(new BigDecimal("100.00"), null);
 
         // 2. Act & 3. Assert
         assertThatThrownBy(() -> accountService.createAccount(request))

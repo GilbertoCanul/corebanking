@@ -7,9 +7,6 @@ import java.math.BigDecimal;
 @Schema(description = "Payload required to create a new banking account")
 public record AccountRequest(
 
-        @Schema(description = "Unique alphanumeric identifier for the account", example = "ACC-987654321")
-        String accountNumber,
-
         @Schema(description = "Initial deposit amount to open the account", example = "1500.00")
         BigDecimal initialBalance,
 
