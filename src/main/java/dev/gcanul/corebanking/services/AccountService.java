@@ -4,8 +4,10 @@ import dev.gcanul.corebanking.dtos.AccountRequest;
 import dev.gcanul.corebanking.dtos.AccountResponse;
 import dev.gcanul.corebanking.entities.Account;
 import dev.gcanul.corebanking.entities.User;
+import dev.gcanul.corebanking.events.AccountCreatedEvent;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
+import dev.gcanul.corebanking.producers.AccountEventProducer;
 import dev.gcanul.corebanking.repositories.AccountRepository;
 import dev.gcanul.corebanking.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final AccountMapper accountMapper;
     private final UserRepository userRepository;
+    private final AccountEventProducer eventProducer;
 
     @Transactional
     public AccountResponse createAccount(AccountRequest accountRequest) {
@@ -50,6 +53,15 @@ public class AccountService {
 
         // Save in the database
         Account savedAccount = accountRepository.save(account);
+
+        AccountCreatedEvent event = new AccountCreatedEvent(
+                account.getId(),
+                account.getAccountNumber(),
+                account.getBalance(),
+                account.getUser().getId()
+        );
+
+        eventProducer.sendAccountCreatedEvent(event);
 
         // Mapping: from Entity to DTO (Record)
         return accountMapper.toResponse(savedAccount);
