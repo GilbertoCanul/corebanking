@@ -33,7 +33,7 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html"
                         ).permitAll()
-                        .anyRequest().authenticated()           // Todo lo demás requiere token
+                        .anyRequest().authenticated()
                 )
 
                 // 3. Indicamos que la sesión es STATELESS (no guardamos cookies de sesión en el servidor)
