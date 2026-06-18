@@ -6,6 +6,7 @@ import dev.gcanul.corebanking.entities.Account;
 import dev.gcanul.corebanking.entities.User;
 import dev.gcanul.corebanking.events.AccountCreatedEvent;
 import dev.gcanul.corebanking.exceptions.AccountNotFoundException;
+import dev.gcanul.corebanking.exceptions.UserNotFoundException;
 import dev.gcanul.corebanking.mappers.AccountMapper;
 import dev.gcanul.corebanking.producers.AccountEventProducer;
 import dev.gcanul.corebanking.repositories.AccountRepository;
@@ -30,18 +31,9 @@ public class AccountService {
 
     @Transactional
     public AccountResponse createAccount(AccountRequest accountRequest) {
-        if (accountRequest.initialBalance().compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("Initial balance cannot be negative");
-        }
-
-        if (accountRequest.userId() == null) {
-            throw new IllegalArgumentException("User ID cannot be null");
-        }
-
         // Validate that user exists
         User user = userRepository.findById(accountRequest.userId())
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + accountRequest.userId()));
-        // Nota: Más adelante puedes cambiar RuntimeException por un UserNotFoundException personalizado
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + accountRequest.userId()));
 
         String generatedAccountNumber;
 

@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,7 +35,7 @@ public class AccountController {
             @ApiResponse(responseCode = "400", description = "Invalid input data provided"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - Invalid or missing JWT token")
     })
-    public ResponseEntity<AccountResponse> createAccount(@RequestBody AccountRequest accountRequest) {
+    public ResponseEntity<AccountResponse> createAccount(@Valid @RequestBody AccountRequest accountRequest) {
         AccountResponse accountResponse = accountService.createAccount(accountRequest);
         return new ResponseEntity<>(accountResponse, HttpStatus.CREATED);
     }
